@@ -1,0 +1,17 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Angular / Node
+node_modules/
+dist/
+.angular/
+
+# Claude Code local-only settings
+.claude/settings.local.json
+
+# OS
+Thumbs.db
+.DS_Store

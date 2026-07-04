@@ -1,0 +1,199 @@
+SESSION MODE: MENTORED PLANNING
+
+CONTEXT
+
+The user wants to use this (and future) planning sessions to sharpen their own system-design skills, not just get a finished plan handed to them. The workflow:
+
+1. User proposes an overall implementation plan for a feature/change.
+2. I do not immediately hand over a corrected plan. I first challenge them, asking pointed questions about edge cases, failure modes, scaling, security, data consistency, etc, to see if they can spot the gaps themselves.
+3. If they find the gap, acknowledge it and fold it into the plan.
+4. If they can't find it after a genuine attempt, I explain the gap and the reasoning behind the fix, then update the plan.
+5. This plan file is the running source of truth and gets revised incrementally as gaps are found and closed.
+
+Repo state as of exploration: Arlo_Chat is a greenfield project, an ASP.NET Core 8 Web API backend (backend/Arlo_chat.Api, still on the default WeatherForecast scaffold) and an Angular frontend (frontend/Arlo-chat-client, default CLI scaffold). No custom domain code exists yet.
+
+PRODUCT ROADMAP (AS GIVEN BY USER)
+
+Arlo Chat, full feature list, to be planned and built roughly in this order:
+1. Login page
+2. Search bar for existing conversations
+3. Manage Friends: Add Friend, Friend List, Friend Requests
+4. One-to-one chat
+5. Group chat
+6. Translate the conversation
+7. Generative AI feature added to items 4 and 5
+
+STATUS
+
+Feature 1 (Login page) design pass is complete and implementation is done. Items 1 through 18, 21, and 24 are resolved, covering the settled architecture: auth flow, cookie-based JWT plus CSRF, refresh-token rotation with family and reuse detection, controller layout, and (item 24) how Logout identifies its FamilyId without the path-scoped refresh cookie. Item 20 was picked back up and resolved during implementation (see item 20 for the silent-refresh mechanism actually built). Items 19, 22, and 23 remain consciously deferred, not forgotten, not blocking. See the STATUS UPDATE, IMPLEMENTATION PASS note after item 24 for what's left (pointing at a real Postgres instance) before this feature is fully done. Next step: apply the InitialCreate migration once Postgres is available, re-verify the live auth cycle, then move to planning feature 2 (search bar over conversations).
+
+FEATURE 1: LOGIN PAGE, DRAFT V1 AS ORIGINALLY PROPOSED
+
+Frontend, as first proposed:
+- LoginComponent: username, password, login button, create-account link
+- CreateAccountComponent: username, email, password
+- HomeComponent: landing page after successful login
+- AuthService
+- Interceptor: to add JWT token to outgoing requests
+
+Backend, as first proposed:
+- JWT authentication layer
+- UserController with Login and Register both returning bool
+- RegisterRequestModel: Username, Email, Password (password hashed before storing)
+- LoginRequestModel: Username, Password (password hashed and compared)
+- UserDto: username, email
+- EF Core and Postgres, code-first: User entity, Fluent API constraints, AutoMapper dto-to-entity, DbContext registered in Program.cs, UserRepository plus DI
+
+Everything below records how that draft evolved, item by item, in the order the items are numbered (not necessarily the order they were discussed, since some were revisited more than once).
+
+ITEM 1: LOGIN RESPONSE SHAPE. RESOLVED (answer shown to user after 3 rounds without progress).
+Original problem: Login returned only a bool, so the frontend had no token and no user id. First fix introduced:
+  AuthResponseDto containing Token (string) and User (UserDto)
+  UserDto containing Id (int), Username (string), Email (string)
+  User entity containing Id, Username, Email, PasswordHash (renamed from Password for clarity)
+Note: AuthResponseDto was later superseded once the JWT moved into a cookie (see item 9). Login's response body reverted to plain UserDto at that point. AuthResponseDto is dead as a type.
+
+ITEM 2: REGISTER RETURN TYPE. RESOLVED.
+Register(RegisterRequestModel) returns ResponseModel instead of bool, where ResponseModel is Success (bool) and Message (string). This was later actually wired into the method signature (an earlier pass introduced ResponseModel as a type but forgot to change Register's signature to use it; that was corrected).
+
+ITEM 3: USERREPOSITORY NAMING. RESOLVED.
+UserRepository is intentionally two distinct things: an Angular HTTP-wrapper service on the frontend, and the EF Core data-access class on the backend. Naming suggestion, not blocking: rename the frontend one to UserApiService since "Repository" is an unconventional name for an Angular service and could confuse future readers.
+
+ITEM 4: TOKEN TRANSPORT. RESOLVED, then superseded by item 9.
+Originally: the JWT travels in the login response JSON body (inside AuthResponseDto), not in a response header, because custom response headers need explicit Access-Control-Expose-Headers CORS configuration to be readable cross-origin, while a JSON body avoids that entirely. Every subsequent request would then carry Authorization: Bearer as a request header, added by the Interceptor.
+Superseded: once JWT storage moved to an HttpOnly cookie (item 9), this whole Bearer-header design was replaced. See item 9.
+
+ITEM 5: LOGIN FAILURE MESSAGE. RESOLVED (corrected an insecure choice).
+User initially chose to tell the client specifically whether username or password was wrong. This enables username enumeration, an OWASP-documented anti-pattern: an attacker can map valid usernames by comparing error messages, then target credential stuffing or phishing at confirmed accounts. Fix: Login always returns one generic message such as "invalid username or password" regardless of which field actually failed. User agreed to switch to generic.
+
+ITEM 6: PASSWORD HASHING ALGORITHM. RESOLVED (corrected a wrong-but-plausible pick).
+User chose SHA-256 with a random salt. Salting defeats rainbow-table and precomputation attacks but does nothing about hash speed: SHA-256 is designed to be fast, so a leaked database of salted SHA-256 hashes is brute-forceable at billions per second on modern GPUs. Fix: use a deliberately slow, tunable key-derivation function instead, such as bcrypt, scrypt, Argon2, or PBKDF2, where the cost factor can increase over time as hardware improves. Recommendation given and accepted: ASP.NET Core Identity's PasswordHasher of T, which is framework-native (PBKDF2 under the hood), needs no extra NuGet dependency, and works fine standalone even without adopting full Identity or UserManager.
+
+ITEM 7: SECRETS MANAGEMENT. RESOLVED.
+The JWT signing key and the Postgres connection string must never live in appsettings.json or in git.
+Local development: dotnet user-secrets, which writes to a file outside the repository entirely, Development-environment only, not something that deploys anywhere.
+Production: Azure Key Vault holds the actual secrets; the app fetches them at startup via its own Managed Identity, using the AddAzureKeyVault configuration provider. No raw secret is ever copied into a pipeline variable.
+GitHub Secrets is for deployment credentials only, such as the Azure service principal or federated identity the CI pipeline uses to deploy. It is not a place to also store the JWT key, to avoid the same secret existing in two systems.
+
+ITEM 8: LAYERING. RESOLVED.
+UserController calls UserService, which calls UserRepository. The controller stays thin; hashing, validation, and business logic live in UserService; UserRepository is pure EF Core data access. Optional refinement, not required for v1: split JWT signing into its own ITokenService so it is reusable and isolated, useful once refresh tokens exist.
+
+ITEM 9: JWT STORAGE. RESOLVED. Fork chosen: HttpOnly cookie.
+Login sets the JWT via a Set-Cookie response header, HttpOnly and Secure, not inside the AuthResponseDto body, since including it in the body as well would defeat the point of HttpOnly. The response body just returns UserDto.
+CSRF protection is required, since cookies auto-attach to requests: double-submit cookie pattern. The server also sets a second, non-HttpOnly, random CSRF cookie. The Interceptor's job changes from "attach a Bearer token" to "read the CSRF cookie, copy its value into an X-CSRF-Token request header" on state-changing calls. The server verifies the header matches the cookie.
+CORS: the backend needs AllowCredentials() plus an explicit origin, never a wildcard. Angular's HttpClient calls need withCredentials: true. This is needed regardless of domain structure, since a different host is a different origin either way.
+Cookie SameSite and Domain attributes are a separate concern from CORS. Default assumption until real domains are chosen: if frontend and backend are subdomains of one root domain (for example app.arlochat.com and api.arlochat.com), use SameSite=Lax plus an explicit Domain=.arlochat.com on the cookie, since cookies are host-only by default and won't cross subdomains otherwise. If the domains end up genuinely unrelated instead, revisit: SameSite=None with Secure is required, no shared Domain attribute is possible, and CSRF protection becomes load-bearing rather than defense-in-depth.
+
+ITEM 10: AUTHGUARD, "AM I LOGGED IN" AFTER A PAGE REFRESH. RESOLVED.
+An HttpOnly cookie means Angular JS can never read it directly, so the guard cannot do a synchronous local check.
+New backend endpoint: UserController.Me(), decorated with [Authorize], returning 200 with the user or 401. Identity comes from the JWT that ASP.NET Core has already parsed off the cookie.
+AuthService calls Me once on app bootstrap, using Angular's APP_INITIALIZER or provideAppInitializer, and caches the result in an in-memory observable or signal called currentUser, before routes render, to avoid a flash of the wrong content.
+AuthGuard reads that cached state, not the cookie: logged in allows /home and blocks /login; logged out is the reverse.
+A global HTTP interceptor catches 401 on any request, since the cookie can expire mid-session and not just at load, and clears the cached state and redirects to /login (refined further in item 12).
+
+ITEM 11: HTTP STATUS CODES. RESOLVED.
+Login and Register use real status codes, 401 for bad credentials and 400 or 409 for a duplicate username, instead of always returning 200 with Success:false in the body. Consequence: Angular's HttpClient treats any non-2xx response as an error on the Observable, delivered as HttpErrorResponse via subscribe's error callback or catchError, not as a normal success payload. Components need to read err.status and err.error.Message.
+
+ITEM 12: GLOBAL 401 INTERCEPTOR SCOPE. RESOLVED (corrected a "treat every 401 the same" answer).
+Not every 401 means "session expired."
+Login's own 401 for wrong credentials, and Register's failure, are handled locally by the calling component's own subscribe error callback, shown inline on the form. There was never a session to expire.
+The bootstrap Me call's 401, for a brand-new anonymous visitor, is handled locally by AuthService's bootstrap logic, simply setting currentUser to null. There was also never a session here.
+Only a 401 on any other request, made after a session was already established, whether bootstrap succeeded or the user just logged in, is a real "kicked out mid-session" event. That is the one case the global interceptor's clear-state, redirect, and notify logic should fire for.
+Implementation: the global interceptor excludes the Login, Register, and bootstrap-Me request URLs from its redirect logic; those call sites own their own error handling.
+
+ITEM 13: DUPLICATE USERNAME OR EMAIL RACE CONDITION. RESOLVED (corrected an over-engineered choice).
+User proposed raising the transaction isolation level, for example to Serializable. Rejected: this only works if every write path remembers to opt in, so it is not a schema-level guarantee; it needs custom retry-on-serialization-failure logic; and it is the wrong tool anyway, since it is built for multi-row invariants rather than single-column uniqueness.
+Actual fix: a database-level UNIQUE constraint on Username and on Email, via Fluent API's HasIndex(...).IsUnique(). This is enforced unconditionally regardless of code path. The application-level "select then insert" check stays only as a fast-path nicety; when two requests race past it, one insert throws a unique-violation, Postgres error code 23505, surfaced by EF Core as DbUpdateException, which UserService catches and translates into the 409 response rather than letting it bubble up as a raw 500.
+
+ITEM 14: PASSWORD VALIDATION RULES. RESOLVED (corrected an incomplete and outdated answer, then a final product decision).
+User specified 8 to 16 characters, requiring at least one letter, one number, and one symbol, but did not initially say where this is enforced.
+Where: server-side is the real security boundary, since the client can be bypassed entirely via curl, Postman, or browser dev tools. Client-side validation only mirrors the same rule for instant UX feedback and is never trusted alone.
+What: the 8-to-16 plus mandatory-composition rule is outdated per NIST 800-63B guidance. Forced composition, requiring one symbol or one number, pushes users toward predictable, already-cracked-dictionary patterns such as Password1! without meaningfully raising entropy, and a 16-character cap actively forbids strong long passphrases, which are the actual best defense against brute force. Recommended: a minimum of about 8 to 10 characters with a high maximum, around 64 to 128.
+Final decision: the user fixed the range at 8 to 10 characters total. The tradeoff caveat is noted but not adopted; this is the user's call as product owner.
+Confirmed during implementation: the mandatory letter-plus-number-plus-symbol composition rule survives alongside the shortened 8-to-10 range; it was not dropped along with the 16-character cap. Implemented identically in both places: PasswordValidator (backend, Services/PasswordValidator.cs) and passwordComplexityValidator (frontend, core/validators/password-complexity.validator.ts), per item 14's own client-mirrors-server rule.
+
+ITEM 15: CONTROLLER SPLIT. RESOLVED, reversed from the initial call.
+Initially deferred: stay with one UserController hosting Login, Register, Me, and Logout. Later revisited when designing Refresh: the user proposed splitting controllers by "requires prior authentication," which was the wrong axis, since it would have split Login and Refresh, two different ways of getting the same valid session, across two controllers. The discussion landed correctly on splitting by topic and cohesion instead of by implementation detail.
+Final decision: AuthController hosts the whole auth lifecycle: Login, Register, Logout, Me, and Refresh. UserController is reserved for later non-auth user-data endpoints, such as profile and search and friend lookups, once those features exist.
+
+CONSOLIDATED AUTHCONTROLLER SIGNATURES, AS OF ITEM 15
+
+AuthController, routed at api/[controller], contains:
+
+Register(RegisterRequestModel request), returning ActionResult of ResponseModel.
+  On success: 200 or 201 with ResponseModel Success true.
+  On failure: 400 for validation or 409 for a duplicate, with ResponseModel Success false and a Message.
+
+Login(LoginRequestModel request), returning ActionResult of UserDto.
+  On success: sets the HttpOnly and Secure access-token cookie, the non-HttpOnly CSRF cookie, and the HttpOnly and Secure refresh-token cookie (path-scoped per item 18), all via Set-Cookie; responds 200 with UserDto in the body.
+  On failure: 401 with ResponseModel Success false and the generic message "invalid username or password," with no enumeration of which field was wrong.
+
+Me(), decorated [Authorize], returning ActionResult of UserDto.
+  Returns 200 with UserDto, or 401, handled entirely by the [Authorize] and JWT-cookie middleware with no custom logic needed.
+
+Refresh(), returning ActionResult of UserDto.
+  Deliberately not decorated with [Authorize] on the access-token scheme; see item 19, still to be designed in full. It manually reads the path-scoped refresh-token cookie and runs the item 17 validation logic.
+
+Logout(), decorated [Authorize], returning ActionResult of ResponseModel.
+  Clears the access, CSRF, and refresh cookies, and revokes the current FamilyId's still-valid row or rows, per items 17 and 21. Responds 200 with ResponseModel Success true.
+
+Note: AuthResponseDto, from item 1, is dead, superseded once the token moved into a cookie in item 9; Login's body reverted to plain UserDto. ActionResult of T is required rather than a bare typed return, because success and failure return different body shapes and different status codes.
+
+FEATURE 1 ADDENDUM: REFRESH TOKEN ROTATION, A DELIBERATE SCOPE EXPANSION
+
+The user chose an access token lasting 15 minutes plus a refresh token lasting 1 day, with rotation, after being shown the added scope this requires: a database-backed token store, reuse and theft detection, a path-scoped cookie, and interceptor-side silent-refresh plus concurrency handling.
+
+ITEM 16: REFRESH TOKEN HASHING AT REST. RESOLVED (corrected an over-applied lesson).
+User said to hash it the same way as passwords, using bcrypt. This is wrong: bcrypt, Argon2, and PBKDF2 defend against brute-forcing a small, human-guessable keyspace, which is the situation with passwords. A refresh token, by contrast, is server-generated and high-entropy, roughly 256 bits from a cryptographically secure random generator, and is not guessable, so slow hashing adds zero security benefit while costing real latency on every silent-refresh call, which happens roughly every 15 minutes per active session across the whole user base.
+Fix: hash refresh tokens with a fast cryptographic hash such as SHA-256 or an HMAC. Preimage resistance against a database leak does not require slowness, only guess-resistance does, and a 256-bit random value is not guessable regardless of hash speed. Rule of thumb: bcrypt-class hashing is for low-entropy human-chosen secrets; fast hashing is fine for high-entropy generated secrets.
+
+ITEM 17: FAMILY AND REUSE DETECTION. RESOLVED (corrected an incomplete answer, then a scope regression, then settled after genuine reconsideration).
+The user's first answer, "if the token does not match the stored one, reject and force login," only covers a token that never existed or was tampered with. It does not cover the actual case being asked about: an already-rotated-out token, one that was previously valid and has since been replaced, being presented again. That reappearance signals the same secret existed in two places at once, either a benign race condition or a stolen copy that is out of sync with the legitimate rotation. Since the two cannot be reliably told apart, the response is to revoke the entire token family, not just reject the one stale request, since an attacker may already hold the currently-valid rotated token.
+The user then proposed forcing re-login on all of a user's devices whenever this happens. This was revisited as a genuine risk-tolerance tradeoff rather than a correctness bug: family-scoped revocation means less friction and is the standard default, while account-wide revocation is more paranoid and safer under uncertainty about the true scope of a compromise. After weighing this, the final and settled decision is family-scoped revocation only: a reuse detected on one FamilyId revokes only that family's still-valid rows; other devices or families belonging to the same user are left untouched. A "log out of all devices" action can exist later as a distinct, user-triggered, opt-in feature, but it is not the automatic response to a detected theft.
+
+RefreshToken table design:
+  Id, an integer primary key.
+  UserId, an integer foreign key to User.
+  FamilyId, a Guid shared by every token descended from one Login call.
+  TokenHash, a string holding the SHA-256 hash of the raw token; the raw value itself is never stored.
+  CreatedAt, a timestamp.
+  ExpiresAt, a timestamp acting as an absolute cap on this rotation chain, for example CreatedAt plus 1 day.
+  RevokedAt, a nullable timestamp; null means still valid, and it gets set on rotation, on logout, or as a theft response.
+
+Fluent API configuration: a unique index on TokenHash for fast exact-match lookup at refresh time; a plain index on FamilyId, needed to revoke every row in a family at once; a plain index on UserId, needed for per-user session listing later; and the foreign key to User configured with cascade delete.
+
+There is no separate IsUsed flag; RevokedAt being null or set covers it regardless of why it was revoked, whether rotated, logged out, or a theft response. An optional RevokedReason value could be added only if an audit trail is wanted.
+
+Validation logic at refresh time: compute the SHA-256 hash of the presented token and look up the matching row.
+  If no row is found, reject and force login; the token never existed or was tampered with.
+  If a row is found but its RevokedAt is already set, this is reuse detected: revoke every row sharing that FamilyId that is still valid, then reject and force login.
+  If a row is found, not revoked, but its ExpiresAt has passed, reject and force login; this is ordinary expiry and not inherently suspicious on its own.
+  Otherwise: mark this row's RevokedAt as now, insert a new RefreshToken row with the same FamilyId, a new hash, and a new expiry, and issue new access and refresh cookies.
+
+ITEM 18: COOKIE SCOPING. RESOLVED.
+Now that Refresh lives at AuthController.Refresh, routed at api/auth/refresh: the access-token cookie stays at Path=/ since it is needed on every request, while the refresh-token cookie gets Path=/api/auth/refresh, so the browser only attaches it on that one call and never on unrelated endpoints.
+
+ITEM 19: THE FULL CONTRACT FOR POST api/auth/refresh. DEFERRED, deliberately.
+Open question for when this is picked back up: does Refresh also need CSRF validation, the same way Logout does, since it is a state-mutating POST whose cookie auto-attaches. If so, the CSRF cookie must stay at Path=/ even though the refresh-token cookie itself is narrowly scoped per item 18, meaning the two cookies deliberately end up with different scopes.
+
+ITEM 20: INTERCEPTOR SILENT-REFRESH FLOW AND CONCURRENT-401 DEDUPLICATION. RESOLVED, picked back up during implementation of Feature 1.
+The problem has been named: simultaneous 401 responses must not each trigger their own redundant refresh call, and a failed request should be retried once after a successful silent refresh. The concrete mechanism, a single in-flight refresh shared across all callers, has not yet been designed.
+Implemented mechanism: AuthService holds a single refreshInFlight$ observable field. The first 401 to arrive calls AuthService.refreshSession(), which calls the Refresh endpoint once and caches the resulting Observable via shareReplay(1); any other request that 401s while that call is still in flight subscribes to the same cached Observable instead of issuing its own Refresh call, so concurrent 401s collapse into exactly one network call. Once it resolves, every waiting request retries itself exactly once. Retry-loop guard: the retried request is tagged with an HttpContextToken (SKIP_AUTH_RETRY); if that retried request itself 401s again, the interceptor does not attempt a second refresh, it clears session state and redirects to /login. The interceptor excludes Login, Register, and bootstrap-Me per item 12, and additionally excludes Refresh itself (its own 401 is handled locally inside refreshSession, matching the pattern for the other three; without this exclusion a failing Refresh would recursively trigger another refresh call). Files: core/services/auth.service.ts (refreshSession), core/interceptors/auth-error.interceptor.ts.
+
+ITEM 21: LOGOUT SCOPE. RESOLVED.
+Logging out on one device revokes only that device's FamilyId; other devices or sessions belonging to the same user stay logged in. This connects directly to the multi-device discussion under item 17: since each Login call mints its own independent FamilyId, device sessions never share or interfere with each other's rotation chains. Schema implication: the RefreshTokens table is keyed by UserId but must support multiple concurrently-active FamilyIds per user, not a single "current" token per user. The Logout endpoint must revoke every still-valid row for the current session's FamilyId, not just clear cookies on the client side.
+
+ITEM 22: RATE LIMITING ON LOGIN. DEFERRED, deliberately, mid-discussion.
+The user chose to combine both IP-based and account-based limiting, with a good refinement: the IP-level trigger is the number of distinct usernames targeted from that IP, rather than raw request volume, which is a better signal specifically for credential-spray attacks.
+Still open for when this is picked back up: the exact account-level "block" mechanic, choosing among a hard lockout, exponential backoff, or a CAPTCHA challenge. Flagged risk to keep in mind: a hard lockout keyed on account is itself a free denial-of-service vector against that user, since usernames and emails are usually guessable or public, so an attacker can lock out a known user for free without ever guessing their password.
+
+ITEM 23: PASSWORD RESET, OR "FORGOT PASSWORD." DEFERRED.
+This was not on the original roadmap. It was raised as a standard companion feature to login that is currently entirely unhandled. It is deliberately out of scope for this v1 pass, not an oversight.
+
+ITEM 24: HOW LOGOUT KNOWS WHICH FAMILYID TO REVOKE. RESOLVED, gap found during implementation, not previously discussed.
+Item 18 scopes the refresh-token cookie to Path=/api/auth/refresh so it never attaches to unrelated endpoints. That is exactly what breaks Logout's access to it: a POST to api/auth/logout does not carry the refresh-token cookie either, since the path does not match. Item 21 requires Logout to revoke the current session's FamilyId specifically (not "some" FamilyId, since a user can hold several concurrently per item 17), so Logout needs that FamilyId from somewhere else.
+Fix: the access-token JWT itself now carries the FamilyId as a claim ("fid"), minted alongside the existing sub/username/email claims at Login and preserved across every rotation at Refresh (the new access token issued after rotation keeps the same FamilyId, only the refresh token's hash and expiry change). Logout, which is [Authorize]-protected, reads "fid" straight off the already-validated ClaimsPrincipal and calls RevokeFamilyAsync directly, with no dependency on the refresh cookie's path scope and no extra DB lookup by token hash. Files: Services/TokenService.cs (GenerateAccessToken takes a familyId parameter), Controllers/AuthController.cs (Logout reads the fid claim).
+Consequence for cookie clearing: Response.Cookies.Delete must be called with the same Path the cookie was originally set with, or the browser treats it as a different cookie and leaves the original in place. ClearSessionCookies() in AuthController deletes the refresh cookie with Path=/api/auth/refresh specifically, not Path=/, for this reason.
+
+STATUS UPDATE, IMPLEMENTATION PASS
+Feature 1 (Login page) is implemented end to end: backend (entities, AppDbContext with the item-13/17 Fluent API constraints, repositories, UserService, TokenService, AuthController, JWT-cookie authentication, CORS, user-secrets for local dev, Azure Key Vault wiring for production per item 7) and frontend (UserApiService, AuthService with signal-based currentUser, the silent-refresh interceptor from item 20, authGuard/guestGuard, LoginComponent, CreateAccountComponent, HomeComponent). Backend builds clean, frontend builds clean, and the full request pipeline was verified live (dotnet run + ng serve) up to the point of an actual Postgres connection, which was not available in the implementation environment. Remaining before Feature 1 is fully done: point ConnectionStrings:Default at a real Postgres instance and run the InitialCreate migration, then re-verify the live register/login/refresh/logout cycle. Items 19 (CSRF on Refresh) and 22 (rate limiting) and 23 (password reset) remain deferred exactly as scoped above; nothing in this pass forced them open.

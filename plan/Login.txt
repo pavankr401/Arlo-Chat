@@ -1,0 +1,73 @@
+frontend:
+=============
+1. login page: where we will show username and password and login button, create account link
+2. create account: username, email, password
+3. same backend models has to be followed
+4. after successful login, we will redirect user to home screen
+5. after successful register, we will redirect user to login page
+6. JWT uses HttpOnly cookie
+7. we need auth-guard. if user directly navigates to Home without login.
+
+create:
+========
+LoginComponent
+CreateAccountComponent
+HomeComponent
+AuthService - add it in Services folder
+Interceptor - to add jwt token to outgoing request
+UserRepository - add it in Repositories folder
+
+backend:
+=========
+1. Jwt Authentication layer, here we will add the token to the response
+
+2.
+class UserController : ApiController{
+HttpPost Login(LoginRequestModel): UserDto
+HttpPost Register(RegisterRequestModel): ResponseModel
+}
+
+class RegisterRequestModel{
+Username: string
+Email: string
+Password: string //(we will hash and store it)
+}
+
+class ResponseModel{
+Success: bool
+Message: string
+}
+
+class LoginRequestModel{
+Username: string
+Password: string //(we will hash and compare)
+}
+
+class UserDto{
+username: string
+email: string
+}
+
+* password hashing and jwt generation happens in UserService
+
+3. 
+Entitiy Framework core - uses Postgres Sql 
+* code first approach
+* create Entity - user,
+* use fluent API for table validation and constraints register
+* user automap profiler for conversion of dto -> entity
+* Register db context in program.cs
+* create UserRepository and register it in Dependency Injection container and add it in the Repositories folder
+* our db name will be Arlo_Chat
+* create Entities, Dtos folder
+* 
+
+class User{
+username: string, unique
+email: string, unique
+password: string, validation rule: 8 to 16. atleast one alpha, one numeric, one symbol
+}
+
+ArloChatDbContext : DbContext{
+DbSet<User> Users
+}

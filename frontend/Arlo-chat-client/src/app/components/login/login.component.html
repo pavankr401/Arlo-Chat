@@ -1,0 +1,23 @@
+<div class="auth-card">
+  <h1>Log in</h1>
+
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <label for="username">Username</label>
+    <input id="username" type="text" formControlName="username" autocomplete="username" />
+
+    <label for="password">Password</label>
+    <input id="password" type="password" formControlName="password" autocomplete="current-password" />
+
+    @if (errorMessage()) {
+      <p class="error" role="alert">{{ errorMessage() }}</p>
+    }
+
+    <button type="submit" [disabled]="isSubmitting()">
+      {{ isSubmitting() ? 'Logging in...' : 'Log in' }}
+    </button>
+  </form>
+
+  <p class="switch-link">
+    Don't have an account? <a routerLink="/create-account">Create one</a>
+  </p>
+</div>

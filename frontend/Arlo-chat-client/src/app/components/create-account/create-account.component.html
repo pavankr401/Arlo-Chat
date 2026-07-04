@@ -1,0 +1,40 @@
+<div class="auth-card">
+  <h1>Create account</h1>
+
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <label for="username">Username</label>
+    <input id="username" type="text" formControlName="username" autocomplete="username" />
+
+    <label for="email">Email</label>
+    <input id="email" type="email" formControlName="email" autocomplete="email" />
+
+    <label for="password">Password</label>
+    <input id="password" type="password" formControlName="password" autocomplete="new-password" />
+
+    @if (passwordErrors && form.controls.password.touched) {
+      @if (passwordErrors['passwordLength']) {
+        <p class="field-error">Password must be 8-10 characters long.</p>
+      } @else if (passwordErrors['passwordLetter']) {
+        <p class="field-error">Password must contain at least one letter.</p>
+      } @else if (passwordErrors['passwordDigit']) {
+        <p class="field-error">Password must contain at least one number.</p>
+      } @else if (passwordErrors['passwordSymbol']) {
+        <p class="field-error">Password must contain at least one symbol.</p>
+      }
+    } @else {
+      <p class="field-error hint">8-10 characters, with a letter, a number, and a symbol.</p>
+    }
+
+    @if (errorMessage()) {
+      <p class="error" role="alert">{{ errorMessage() }}</p>
+    }
+
+    <button type="submit" [disabled]="isSubmitting()">
+      {{ isSubmitting() ? 'Creating account...' : 'Create account' }}
+    </button>
+  </form>
+
+  <p class="switch-link">
+    Already have an account? <a routerLink="/login">Log in</a>
+  </p>
+</div>
