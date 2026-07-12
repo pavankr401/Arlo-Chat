@@ -1,0 +1,46 @@
+SESSION MODE: MENTORED PLANNING
+
+CONTEXT
+
+Same mentorship workflow as plan/Login Improved.txt and plan/HomeComponent Improved.txt:
+1. User proposes an overall implementation plan for a feature/change.
+2. I do not immediately hand over a corrected plan. I first challenge them, asking pointed questions about edge cases, failure modes, scaling, security, data consistency, etc, to see if they can spot the gaps themselves.
+3. If they find the gap, acknowledge it and fold it into the plan.
+4. If they can't find it after a genuine attempt, I explain the gap and the reasoning behind the fix, then update the plan.
+5. This file is the running source of truth for Manage Friends and gets revised incrementally as gaps are found and closed.
+
+ROADMAP CONTEXT
+
+Arlo Chat's full roadmap (see plan/Login Improved.txt for detail): 1. Login (done), 2. Search bar over conversations, 3. Manage Friends, 4. One-to-one chat, 5. Group chat, 6. Translate conversation, 7. Generative AI assist layered onto 4/5.
+
+Manage Friends is roadmap item 3. Design work on it was pulled forward ahead of finishing the Home component (see plan/HomeComponent Improved.txt, paused mid-discussion) because the two are coupled: starting or finding a conversation from Home is expected to be gated on friendship status, so Home's Conversation-creation flow has a real dependency on Friends existing first.
+
+MANAGE FRIENDS: DRAFT V1 AS ORIGINALLY PROPOSED
+
+<Manage-Friends>
+  <Add-Friends>
+    <Add-Friends-Header>
+      <search-bar>
+        <!-- on search of friend, requested friends will be shown atlast but instead of add will show already requested -->
+      </search-bar>
+    </Add-Friends-Header>
+    <Add-Friends-Body>
+      <!-- list 10 random members who are not their in the friend list and requests list -->
+    </Add-Friends-Body>
+
+  </Add-Friends>
+  <Friend-Requests>
+      <!-- we will show the request with tick and wrong options -->
+       <!-- on tick option, one will be in the friends list -->
+        <!-- on wrong option, again will be visible in random members list -->
+  </Friend-Requests>
+  <Friends>
+    <!-- we will show message and delete option beside the friend option -->
+     <!-- on click of delete, one will be shown in random friends list -->
+      <!-- on click of message, popup will be shown, conversation content option will be rendered -->
+  </Friends>
+</Manage-Friends>
+
+Everything below records how that draft evolves, item by item, as gaps are found and resolved in discussion.
+
+(discussion starts below — no items resolved yet)

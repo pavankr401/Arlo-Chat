@@ -1,0 +1,222 @@
+class Message{
+id: int;
+ConversationUid: int;
+AiAssisted: bool;
+AiAssistedQuery: string;
+AiAssistedResponse: string;
+OwnerId: int; // userUid
+Content: string;
+Type: MessageType;
+Format: string;
+CreatedBy: int;
+CreatedDate: DateTime;
+ModifiedBy: int;
+ModifiedDate: DateTime;
+}
+
+class Conversation{
+id: int;
+CreatedBy: int;
+CreatedDate: DateTime;
+ModifiedBy: int;
+ModifiedDate: DateTime;
+Type: ConversationType;
+LatestMessageId: int;
+Participants: List<ConversationParticipant>; 
+messages: List<Message>;
+}
+
+class ConversationParticipant{
+id: int;
+userId: int;
+ConversationUid: int;
+JoinedAt: DateTime;
+LeftAt: DateTime;
+role: ParticipantRole;
+}
+
+class User{
+id: int;
+Username: string;
+Email: string;
+PasswordHash: string;
+refreshTokens: List<RefreshToken>;
+Friends: List<User>;
+}
+
+class Friendship{
+id: int;
+requesterId: int;
+requesteeId: int;
+Status: FriendRequestStatus;
+CreatedDate: DateTime;
+}
+
+Enum ParticipantRole{
+Admin,
+Member
+}
+
+Enum FriendRequestStatus{
+Pending,
+Accepted,
+Rejected
+}
+
+enum ConversationType{
+Single;
+Group;
+}
+
+enum MessageType{
+Text;
+Audio;
+Video;
+Document;
+}
+
+class MessageDto{
+id: int;
+ConversationUid: int;
+AiAssisted: bool;
+AiAssistedQuery: string;
+AiAssistedResponse: string;
+OwnerId: int; // userUid
+Content: string;
+Type: MessageType;
+Format: string;
+}
+
+
+CreateConversationRequest {
+  Type: ConversationType
+  ParticipantIds: List<int>   // the OTHER participants — you don't include yourself
+  Message: MessageDto
+}
+
+
+
+[ApiController]
+class UserController{
+Friends(): List<UserDto>
+RemoveFriend(friendId): bool
+FriendRequests(): List<FriendRequestDto>
+AddFriend(int friendId): bool   // false - we will send the message with status code
+Search(string expression): List<UserDto>
+
+// friendId can be used for groups too as groupId
+Messages(int conversationId): List<MessageDto>
+DeleteMessage(int messageId): bool// dummy
+UpdateMessage(Message meesage): bool // dummy
+Conversations(): List<ConversationDto>
+DeleteConversation(int conversationId): bool
+AddConversation(Conversation conversation): bool
+UpdateConversation(Conversation conversation): bool // dummy this is for group only
+}
+
+
+class ChatHub: Hub{
+SendMessage()
+ReceiveMessage()
+OnConnectedAsync()
+OnDisconnectedAsync()
+}
+
+we will use IChatClient to sync b/w client methods and server events
+
+
+==========================
+DRAFT V2, RESOLVED (mentored-planning pass, roadmap items 3/4/5)
+==========================
+
+SESSION MODE: MENTORED PLANNING, same workflow as plan/Login Improved.txt. User pasted a full
+"fullfledged" backend plan superseding the DRAFT V1 above (Message dropped AiAssisted* fields;
+Friendship/UiFriendRequestStatus/ManageFriendRequestModel added; User gained LastActiveAt/
+LastInactivityEmailSentAt; ChatController/UserService/ChatService/ChatHub/PresenceTracker/
+InactivityEmailBackgroundService fleshed out). Five gaps were raised and resolved before
+implementation, then the backend was implemented end to end.
+
+ITEM 1: IDENTITY FIELDS TRUSTED FROM THE CLIENT. RESOLVED (corrected an incomplete first answer).
+SearchUsers's userId, AddFriend's requesterId, and ManageFriendRequestModel.performerUserId were
+all client-supplied parameters. User's first answer ("take them from HttpContext") was right in
+direction but applied too broadly - re-asked against AddFriend specifically, user correctly
+isolated that only requesterId (the identity claim) moves to HttpContext, while requesteeId (the
+target, just data) stays a real parameter. Follow-up on whether performerUserId should still exist
+as a DTO field even if always overwritten: user initially said keep it "since there's a server
+check anyway," then, asked what that check compares against, concluded it would just compare
+against HttpContext - making the field pure redundancy with no legitimate use, only a future
+footgun (one code path that forgets to overwrite it is a privilege-escalation bug). Settled: field
+removed from ManageFriendRequestModel entirely. Same class of fix as Login item 5.
+Implemented: AuthorizedApiController.CurrentUserId (Controllers/AuthorizedApiController.cs) reads
+the sub claim once; UserController/ChatController pass it into every service call instead of
+trusting a client-supplied id. ManageFriendRequestModel is (TargetUserId, Status) only.
+
+ITEM 2: Message.TargetId SET INCONSISTENTLY. RESOLVED, user's own call (kept, not dropped).
+Was only set on the group send path, never on 1:1. User chose to keep the field and set it on
+both paths rather than drop it. Implemented: ChatHub.SendMessage now sets message.TargetId =
+targetId for 1:1; SendGroupMessage already set it to the conversation id.
+
+ITEM 3: 1:1 CONVERSATION-CREATION RACE DROPPING THE LOSER'S MESSAGE. RESOLVED.
+Two friends messaging each other for the first time simultaneously could both attempt to create
+the conversation; the loser threw and the message was lost. User asked for the fix rather than
+deriving it. Design: filtered unique index on Conversation(UserIdLow, UserIdHigh) WHERE Type =
+Single (group conversations leave those columns null, so they're excluded). ChatService catches
+the resulting DbUpdateException (same PostgresErrorHelper.IsUniqueViolation pattern as
+AddFriend/Friendship), re-fetches the row the winner just committed - guaranteed visible, since
+Postgres serializes the two concurrent inserts against the same unique key - and returns it with
+a WasCreated=false flag instead of throwing. SendMessage always attaches the message to whichever
+conversation comes back; nothing is dropped either way.
+
+ITEM 4: NAMING COLLISION, TWO UNRELATED "CreateConversation" OPERATIONS. RESOLVED.
+ChatService's implicit 1:1 creation and ChatHub's explicit group-creation RPC shared a name.
+Renamed the hub's group RPC to CreateGroupConversation, per user's decision.
+
+ITEM 5: SIGNALR AUTH VS. THE COOKIE-BASED JWT FROM LOGIN ITEM 9. RESOLVED.
+Clients.User(id) needs SignalR's UserIdentifier to resolve to something; by default that's
+ClaimTypes.NameIdentifier, which this app's access tokens don't set (they set sub instead, per
+Login's TokenService). Fix, per user's choice: a custom IUserIdProvider (Security/
+ChatUserIdProvider.cs) mapping the sub claim to UserIdentifier, registered as a singleton. On the
+Angular side, the hub connection needs { withCredentials: true } so the HttpOnly access-token
+cookie rides along on the negotiate call and transport-layer requests (native WebSocket already
+sends cookies for the target origin regardless; withCredentials is what covers the negotiate
+call and any fallback transport). No change needed to the existing JwtBearer OnMessageReceived
+cookie-reading handler - it already applies to the hub's HTTP-level requests same as any other
+endpoint.
+
+IMPLEMENTATION NOTES (mechanical decisions made without a separate discussion round, disclosed
+here rather than silently applied):
+- User.Friends: List<User> and Conversation.messages: List<Message> dropped - neither has a
+  reader anywhere in the design (all friend/message lookups go through Friendship/Message queries
+  directly), and Friends specifically has no clean EF mapping since Friendship isn't a pure join
+  entity (it carries Status). CreateConversationRequest dropped for the same reason: nothing in
+  the finalized RPC-based creation flow (ChatHub.SendMessage / CreateGroupConversation) consumes it.
+- ConversationParticipant.LeftAt, Message.ModifiedBy/ModifiedDate made nullable (null = still a
+  member / never modified) - the drafted non-nullable DateTime couldn't represent "hasn't happened
+  yet" without a sentinel value.
+- ConversationParticipant.User marked [JsonIgnore]: Conversation is returned directly from
+  ChatController (List<Conversation>, as originally specified) with Participants included, and an
+  un-ignored User nav property would have serialized PasswordHash into that response.
+- FriendRequests(): List<FriendRequestDto> re-added to UserController/UserService - present in the
+  original chat.txt draft above, absent from the new fullfledged plan, but the Manage Friends
+  component draft's "Friend Requests" tab has no other way to list incoming pending requests.
+  Added via the same pattern as FetchFriends (IFriendshipRepository.GetIncomingPendingRequestsPageAsync).
+- ManageFriend's Accepted -> Removed transition (deleting an existing friend) added: the service
+  pseudocode covered Pending -> Accepted/Rejected/Cancelled but not the Removed case, even though
+  FriendRequestStatus.Removed exists and the Manage Friends draft's delete action needs it.
+- IChatClient trimmed to server-to-client methods only (ReceiveMessage, ConversationCreated,
+  ConversationUpdated, ReceiveGroupMessage). SendMessage/CreateGroupConversation/SendGroupMessage
+  are client-to-server calls - they're plain public methods on ChatHub, not part of Hub<T>'s
+  interface; the original draft listing both directions on one interface doesn't compile.
+- InactivityEmailBackgroundService resolves AppDbContext via IServiceScopeFactory.CreateScope()
+  per run rather than constructor-injecting it - AppDbContext is scoped, the background service is
+  a singleton hosted service, so it can't hold a DbContext for the process lifetime.
+
+STATUS: Backend implemented end to end - entities, EF Core configuration and migration
+(AddFriendsAndChat), repositories, UserService/ChatService, UserController/ChatController,
+ChatHub/IChatClient/PresenceTracker/ChatUserIdProvider, InactivityEmailBackgroundService, and
+Program.cs wiring (AddSignalR, custom IUserIdProvider, MapHub at /hubs/chat). dotnet build is
+clean. Migration not yet applied to a live Postgres instance (same open item Login's STATUS UPDATE
+already flagged). Angular data layer (chat-hub.service.ts, chat-api.service.ts, friend API calls)
+follows this section. Manage Friends and Home page components remain their own, still-paused
+mentored-planning threads (plan/ManageFriendsComponent Improved.txt, plan/HomeComponent Improved.txt).
+

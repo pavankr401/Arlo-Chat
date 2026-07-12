@@ -1,0 +1,69 @@
+
+<header>
+  <company-logo content="Arlo Chat" float="left"></company-logo>
+  <search-bar float="middle">
+    <!-- we will show top 10 messages which having the search content -->
+  </search-bar>
+  <button content="Manage Friends">
+    <!-- on click of it, it navigates to Manage Friends Component -->
+  </button>
+  <button content="Settings icon">
+    <!-- on click of it, popup will be opened with theme option -->
+  </button>
+</header>
+<body>
+  <!-- left side occupes 30% -->
+  <conversations>
+    <!-- each conversation tile contains either receiver name or group name and latest message-->
+  </conversations>
+
+  <!-- right side occupes 70% -->
+  <conversation-content #textBox>
+    <conversation-content-header>
+      <Receiver-Name>
+        <!-- receiver name or group name -->
+      </Receiver-Name> 
+      <span>
+        <!-- if receiver, then show receiver's online status -->
+         <!-- if group, then how many numbers are active -->
+      </span>
+      <more-options></more-options>
+    </conversation-content-header>
+    <conversation-content-body>
+      <messages>
+        <!-- sender messages has to be right side -->
+         <!-- receiver messages has to be left side -->
+      </messages>
+
+    </conversation-content-body>
+    <conversation-content-footer>
+      <text-box>
+        <!-- if attachments added, then show the attachments label with how many added -->
+        <!-- on click of attachment label, then show popup -->
+        <!-- in that popup, show all the attachments in tiles -->
+        <!-- in each tile, we will show the attachment with cross symbol -->
+        <!-- on click of cross symbol, it removes the attachment from the list. -->
+      </text-box>
+      <add-attachment></add-attachment>
+      <enable-ai-checkbox>
+        <!-- on click of it, when we try to send a message, it will mark that message as AI Assist Enabled
+         Due to this, we will send the message to GROQ AI model and get the response and render it as sender's message -->
+      </enable-ai-checkbox>
+      <send-button></send-button>
+    </conversation-content-footer>
+  </conversation-content>
+</body>
+
+
+<!-- 
+Generic components:
+<popup></popup>
+<attachments>this component contains the attachments in the tiles</attachments>
+<more-options> it has 3 dots button - we can pass options to it
+-->
+
+<!-- NOTE:
+* Ai assited message query will be shown only to the sender and not receiver's or group members 
+* sender can only see the ai assisted message query and reponse, only after long press on the ai assist message, there will show the option view AI Assist message query, it will be shown in the popup
+* header bg-color is dark rich color and body bg-color is lighter shade of the header bg-color 
+-->

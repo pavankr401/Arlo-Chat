@@ -1,0 +1,584 @@
+=======================
+MODELS
+==========================
+
+class Message{
+id: int;
+ConversationId: int;
+OwnerId: int;
+TargetId: int;
+Content: string;
+Type: MessageType;
+Format: string;
+CreatedBy: int;
+CreatedDate: DateTime;
+ModifiedBy: int;
+ModifiedDate: DateTime;
+}
+
+class Conversation{
+id: int;
+CreatedBy: int;
+CreatedDate: DateTime;
+ModifiedBy: int;
+ModifiedDate: DateTime;
+Type: ConversationType;
+LatestMessageId: int?;
+Participants: List<ConversationParticipant>; 
+messages: List<Message>;
+userIdLow: int?;
+userIdHigh: int?;
+name: string;
+
+// navigation property
+LatestMessage: Message;
+}
+
+class ConversationParticipant{
+id: int;
+userId: int;
+ConversationId: int;
+JoinedAt: DateTime;
+LeftAt: DateTime;
+role: ParticipantRole;
+}
+
+class User{
+id: int;
+Username: string;
+Email: string;
+PasswordHash: string;
+refreshTokens: List<RefreshToken>;
+Friends: List<User>;
+LastActiveAt: DateTime;
+LastInactivityEmailSentAt: DateTime;
+}
+
+
+class UserDto{
+id: int;
+Username: string;
+Email: string;
+friendshipStatus: FriendRequestStatus;
+LastActiveAt: DateTime;
+}
+
+class Friendship{
+id: int;
+requesterId: int;
+requesteeId: int;
+userIdLow: int;
+userIdHigh: int;
+Status: FriendRequestStatus;
+CreatedDate: DateTime;
+
+UNIQUE(userIdLow, userIdHigh)
+}
+
+enum ParticipantRole{
+Admin,
+Member
+}
+
+enum FriendRequestStatus{
+Pending,
+Accepted,
+Rejected,
+Removed,
+Cancelled
+}
+
+enum UiFriendRequestStatus{
+None,
+RequestReceived,
+RequestSent,
+Accepted,
+Rejected,
+Removed,
+Cancelled
+}
+
+enum ConversationType{
+Single;
+Group;
+}
+
+enum MessageType{
+Text;
+Audio;
+Video;
+Document;
+}
+
+class ManageFriendRequestModel{
+performerUserId: int;
+targetUserId : int;
+Status: FriendRequestStatus;
+}
+
+
+
+==========================
+CONTROLLERS
+==========================
+
+
+class UserController{
+  // searchQuery will be exact match of (username or email) and case insensitive
+  SearchUsers(string searchQuery, int userId) : List<UserDto>
+  AddFriend(int requesterId, int requesteeId): bool
+  ManageFriend(ManageFriendRequestModel request): bool
+  FetchFriends(int userId): List<UserDto>
+}
+
+class ChatController{
+    GetUserConversations(int userId, int lastRecentConversationId = -1, int pageSize): List<Conversation>
+    // userId needs to be passed to the service from HttpContext
+    GetConversationMessages(int conversationId, int lastRecentMessageId = -1, int pageSize): List<Message>
+}
+
+
+
+============================
+SERVICES
+============================
+
+
+class UserService{
+
+    AddFriend(int requesterId, int requesteeId){
+        let low = Min(requesterId, requesteeId)
+        let high = Max(requesterId, requesteeId)
+
+        we will check whether a record is there in freiendship table based on condition userIdLow = low and userIdHigh = high
+        if friendship exists and friendship status is Accepted
+            Error Message: both are already connected 
+            return false
+
+        else if friendship exists and friendship status is pending then 
+            if user is requester then 
+                Error Message: already request sent 
+                return false;
+            else
+                Error Message: already user requested you to connect
+        
+        
+        
+        try{
+            if friendship exists and friendship status is rejected or removed then
+                update friendship status to Pending, requesterId = requesterId, requesteeId = requesteeId
+            else 
+                insert friendship with pending status, requesterId, requesteeId
+
+            return true
+        }
+        catch(sql exception){
+            // concurrency case: genericly handled
+            Error Message: already user requested
+            return false
+        }
+    }
+
+
+    SearchUsers(searchQuery, currentUserId){
+
+
+        matchedUser = DB.Users
+                        .FirstOrDefault(u =>
+                            LOWER(u.Username) == LOWER(searchQuery)
+                            OR LOWER(u.Email) == LOWER(searchQuery))
+
+        IF matchedUser IS NULL:
+            RETURN Error("No users found")
+
+        IF matchedUser.id == currentUserId:
+            RETURN Error("Try a different username/email")
+
+        low  = MIN(currentUserId, matchedUser.id)
+        high = MAX(currentUserId, matchedUser.id)
+
+        friendship = DB.Friendships
+                        .FirstOrDefault(f =>
+                            f.userIdLow == low AND f.userIdHigh == high)
+
+        IF friendship IS NULL:
+            uiStatus = None
+
+        ELSE IF friendship.Status == Pending AND friendship.requesterId == currentUserId:
+            uiStatus = RequestSent
+
+        ELSE IF friendship.Status == Pending AND friendship.requesterId != currentUserId:
+            uiStatus = RequestReceived
+
+        ELSE IF friendship.Status == Accepted:
+            uiStatus = Accepted
+
+        ELSE IF friendship.Status == Rejected:
+            uiStatus = None
+
+        dto = MAP matchedUser -> UserDto
+        dto.friendshipStatus = uiStatus
+
+        RETURN dto
+    }
+
+    ManageFriend(ManageFriendRequestModel request){
+        if(request.performerUserId == request.targetUserId ){
+            throw new Exception("Invalid request");
+        }
+
+        int low = Min(request.performerUserId, request.targetUserId )
+        int high = Max(request.performerUserId, request.targetUserId )
+
+        let friendship = Friendships.Where(f => f.userIdLow == low && f.userIdHigh == high);
+
+        if friendship not exist{
+            ErrorMessage: no connection is there to perform this action
+            return false;
+        }
+        
+        if friendship.Status is pending and request.status is Accepted or Rejected{
+            
+            if(request.performerUserId is friendship.requesteeId){
+                if(request.status is Accepted){
+                    update Friendships
+                    set status = FriendRequestStatus.Accepted 
+                    where userIdLow = low and userIdHigh = high
+
+                    Message: request accepted
+                    return true;
+                }
+                else{
+                    update Friendships
+                    set status = FriendRequestStatus.Rejected 
+                    where userIdLow = low and userIdHigh = high
+
+                    Message: request rejected
+                    return true;
+                }
+            }
+            else{
+                Message: unauthorized action
+                return false;
+            }
+        }
+        
+        else if friendship.Status is pending and request.status is Cancelled{
+            if(request.performerUserId is friendship.requesterId){
+                update Friendships
+                set status = FriendRequestStatus.Cancelled
+                where userIdLow = low and userIdHigh = high
+
+                Message: request cancelled
+                return true;
+            }
+            else{
+                Message: unauthorized action
+                return false;
+            }
+        }
+        else {
+            Message: unauthorized action
+            return false;
+        }
+    }
+
+    FetchFriends(int userId, int lastRecentFriendshipId = -1, int pageSize){
+        select u.id, f.status, u.username, u.email, u.LastActiveAt
+        from users u
+        join (
+            select iif(requesteeId = @userId, requesterId, requesteeId) as friendId, id
+            from friendships 
+            where (lastRecentFriendshipId = -1 or id > @lastRecentFriendshipId) 
+                and (requesteeId = @userId or requesterId = @userId) 
+                and status = FriendRequestStatus.Accepted
+        ) f on u.id = f.friendId 
+        order by f.id
+        fetch @pageSize rows only
+    }
+}
+
+
+class ChatService{
+    IsValidConnection(int userId, int targetId){
+        var friendship = db.Friendships.FirstOrDefault(f => 
+            f.UserIdLow == Min(userId, targetId) 
+            and f.UserIdHigh == Max(userId, targetId) 
+            and f.Status == FriendRequestStatus.Accepted);
+        return friendship != null;
+    }
+
+    // later we modify to fetch single and group conversation at a time, for now only single conversations.
+    GetUserConversations(int userId, int lastRecentConversationId = -1, int pageSize): List<Conversation>{
+
+        with UserConversations as (
+            select c.id, c.Type, iif(c.Type is ConversationType.Group, c.id, iif(userId == c.userIdLow, userIdHigh, userIdLow)) targetId, c.createdBy, c.createdDate, d.modifiedDate, c.modifiedBy, c.latestMessageId, c.name
+            from conversations c
+            join conversationParticipants p on c.Id = p.ConversationId
+            where p.UserId = userId and (lastRecentConversationId = -1 or c.Id < lastRecentConversationId)    
+        ), 
+        conversationWithUsers as (
+            select uc.*, coalesce(uc.name, u.username) as conversation_name
+            from UserConversations uc 
+            left join users u on uc.targetId = u.id and uc.Type is ConversationType.Single
+        )
+        select *
+        from conversationWithUsers
+        order by id desc
+        fetch pageSize Rows only;
+
+        SELECT * FROM Messages WHERE id IN (list of all latestMessageIds from this page)
+
+    }
+
+
+    // we can fetch userId from HttpContext
+    GetConversationMessages(int currentConversationId, int currentUserId, int lastRecentMessageId = -1, int pageSize): List<MessageDto>{
+        if not exists(select * from conversationParticipants where userId = currentUserId and conversationId = currentConversationId)
+            throw new Exception("not valid user to bring the conversation!");
+
+        select *
+        from Messages 
+        where conversationId = currentConversationId and (lastRecentMessageId = -1 or id < lastRecentMessageId)
+        order by id desc 
+        fetch pageSize Rows only 
+
+        select u.id, u.username, c.id, cp.JoinedAt, cp.LeftAt
+        from Conversations c 
+        join ConversationParticipants cp on cp.conversationId = c.id
+        join Users u on cp.UserId = u.id 
+        where c.id = currentConversationId 
+
+        // to reduce the latency, i will bind these details together in client side
+    }
+
+    AddConversation(){
+
+    }
+
+}
+
+
+
+
+=============================
+HUB
+==============================
+
+interface IChatClient{
+    SendMessage(int targetId, Message message) : Task;
+    ReceiveMessage(int senderId, Message message): Task;
+    ConversationCreated(Conversation conversation): Task;
+    ConversationUpdated(Conversation conversation): Task;
+    CreateConversation(Conversation conversation): Task;
+    SendGroupMessage(int conversationId, Message message): Task;
+    ReceiveGroupMessage(int conversationId, Message message): Task;
+}
+
+class ChatHub : Hub<IChatClient>{
+    ChatHub(ChatService chatService, PresenceTracker presenceTracker){
+
+    }
+
+    OnConnectedAsync(){
+        presenceTracker.AddConnection(Context.ConnectionId, Context.UserIdentifier);
+
+        int.TryParse(Context.UserIdentifier, out var currentUserId);
+        var user = db.Users.Find(currentUserId);
+
+        if(user.LastActiveAt is older than ~1 hour){
+            user.LastActiveAt = now;
+            // fire-and-forget or awaited DB update
+        }
+
+        var userConversationIds = chatService.GetUserConversationIds(Context.UserIdentifier);
+        foreach(var conversationId in userConversationIds){
+            await Groups.AddToGroupAsync(Context.ConnectionId, conversationId.ToString());
+        }
+    }
+
+    OnDisconnectedAsync(){
+        presenceTracker.RemoveConnection(Context.ConnectionId, Context.UserIdentifier)
+    }
+
+    SendMessage(int targetId, Message message){
+        int.TryParse(Context.UserIdentifier, out var currentUserId);
+        message.OwnerId = currentUserId;
+
+        if(targetId == message.OwnerId){
+            throw new Exception("sending messages to yourself not allowed");
+        }
+        if(!chatService.IsValidConnection(targetId, message.OwnerId)){
+            throw new Exception("Friendship doesn't exist! to send message");
+        }
+
+        var conversation = chatService.GetConversation(targetId, message.OwnerId);
+        bool isConversationCreated = false;
+
+        if(conversation is empty){
+            try{
+                conversation = chatService.CreateConversation(targetId, message.OwnerId);
+                isConversationCreated = true;
+            }
+            catch(Exception ex){
+                throw new Exception("Conversation already created!");
+            }
+        }
+
+        message.ConversationId = conversation.id;
+        var currentMessage = chatService.AddMessage(message);
+        conversation.LatestMessageId = currentMessage.id;
+        chatService.UpdateConversation(conversation);
+
+        if(isConversationCreated){
+            Clients.User(targetId.ToString()).ConversationCreated(conversation);
+            Clients.User(message.OwnerId.ToString()).ConversationCreated(conversation);
+        }
+        else{
+            Clients.User(targetId.ToString()).ConversationUpdated(conversation);
+            Clients.User(message.OwnerId.ToString()).ConversationUpdated(conversation);
+        }
+
+        Clients.User(targetId.ToString()).ReceiveMessage(message.OwnerId, currentMessage);
+        Clients.User(message.OwnerId.ToString()).ReceiveMessage(message.OwnerId, currentMessage)
+    }
+
+    CreateConversation(Conversation conversation){
+        if(conversation.Name == string.Empty or conversation.Name is null)
+            throw new Exception("group name is not there!");
+
+        int.TryParse(Context.UserIdentifier, out var currentUserId);
+        var currentUserFriends = dbContext.Friendships.where(f => f.status == FriendRequestStatus.accepted and (f.userIdLow == currentUserId or f.userIdHigh == currentUserId))
+                                                        .select(f.userIdLow == currentUserId ? f.userIdHigh : f.userIdLow)
+                                                        .ToList();
+
+        var seenFriends = new HashSet<int>(currentUserFriends);
+
+        
+        var currentParticipant = new ConversationParticipant(){
+            Role=ParticipantRole.Admin,
+            UserId = currentUserId
+        };
+
+        var currentParticipants = new List<CoversationParticipant>(){currentParticipant};
+        HashSet<int> seen = new HashSet<int>();
+        foreach(var participant in conversation.Participants){
+            if(participant.UserId != currentUserId && !seenFriends.Contains(participant.UserId))
+                throw new Exception("Invalid participant in the conversation!");
+
+            if(seen.TryAdd(participant.UserId)){
+                if(participant.UserId != currentUserId){
+                    participant.Role = ParticipantRole.Member
+                    currentParticipants.Add(participant);
+                }
+            }
+        }
+
+        if(currentParticipants.Count < 3)
+            throw new Exception("group atleast have 3 or more members");
+
+        // insert the conversation into conversations table
+        // insert the conversation Participants in conversationParticipants table
+
+        foreach(var participant in currentParticipants){
+            Clients.User(participant.UserId).ConversationCreated(conversation);
+            foreach(var connectionId in presenceTracker.GetConnections(participant.userId.ToString())){
+                await Groups.AddToGroupAsync(connectionId, conversation.Id.ToString());
+            }
+        }
+    }
+    
+    SendGroupMessage(int conversationId, Message message){
+        int.TryParse(Context.UserIdentifier, out var currentUserId);
+        
+        // if current user belongs to the conversation and (ParticipantRole is Admin or Member)  and type has to be ConversationType.Group 
+        // then bring the conversation 
+        // else null
+        var currentConversation = chatService.GetGroupConversation(conversationId, Context.UserIdentifier);
+        if(currentConversation is null)
+            throw new Exception("Invalid conversation!");
+
+        message.conversationId = currentConversation.Id;
+        message.OwnerId = currentUserId;
+        message.TargetId = currentConversation.Id;
+
+        await chatService.AddMessage(message)
+        currentConversation.LatestMessageId = message.Id;
+        currentConversation.LatestMessage = message;
+
+        await chatService.UpdateConversation(currentConversation);
+
+        Clients.Group(conversationId).ConversationUpdated(currentConversation);
+        Clients.Group(conversationId).ReceiveGroupMessage(conversationId, message);
+
+    }
+}
+
+class PresenceTracker{
+    private ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> UserConnectedDevices 
+        = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
+
+    void AddConnection(string connectionId, string userId){
+        var connections = UserConnectedDevices.GetOrAdd(userId, _ => new ConcurrentDictionary<string, byte>());
+        connections.TryAdd(connectionId, 0);
+    }
+
+    void RemoveConnection(string connectionId, string userId){
+        if(UserConnectedDevices.TryGetValue(userId, out var connections)){
+            connections.TryRemove(connectionId, out _);
+            if(connections.IsEmpty){
+                UserConnectedDevices.TryRemove(userId, out _);
+            }
+        }
+    }
+
+    IEnumerable<string> GetConnections(string userId){
+        return UserConnectedDevices.TryGetValue(userId, out var connections) 
+            ? connections.Keys 
+            : Enumerable.Empty<string>();
+    }
+}
+
+class InactivityEmailBackgroundService : BackgroundService {
+
+    ExecuteAsync(CancellationToken stoppingToken){
+        while(!stoppingToken.IsCancellationRequested){
+            
+            try {
+                RunDailyCheck()
+            }
+            catch(Exception ex){
+                log error, continue loop (don't let one failure kill the service forever)
+            }
+
+            await Task.Delay(TimeSpan.FromDays(1), stoppingToken)
+        }
+    }
+
+    RunDailyCheck(){
+        threeDaysAgo = today - 3 days
+
+        candidateUsers = db.Users.Where(u => 
+            u.LastActiveAt < threeDaysAgo
+            and (
+                u.LastInactivityEmailSentAt is null
+                or u.LastInactivityEmailSentAt <= (today - 3 days)
+            )
+        ).ToList()
+
+        foreach(user in candidateUsers){
+            try {
+                SendInactivityEmail(user.Email)
+                user.LastInactivityEmailSentAt = today
+                db.SaveChanges()   // per-user save, so one failure doesn't lose progress on others
+            }
+            catch(Exception ex){
+                log error for this user, continue to next user
+            }
+        }
+    }
+
+    SendInactivityEmail(string email){
+        // call mail service / provider
+    }
+}

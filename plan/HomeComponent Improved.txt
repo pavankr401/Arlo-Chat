@@ -1,0 +1,87 @@
+SESSION MODE: MENTORED PLANNING
+
+CONTEXT
+
+Same mentorship workflow as plan/Login Improved.txt, now applied to the Home component:
+1. User proposes an overall implementation plan for a feature/change.
+2. I do not immediately hand over a corrected plan. I first challenge them, asking pointed questions about edge cases, failure modes, scaling, security, data consistency, etc, to see if they can spot the gaps themselves.
+3. If they find the gap, acknowledge it and fold it into the plan.
+4. If they can't find it after a genuine attempt, I explain the gap and the reasoning behind the fix, then update the plan.
+5. This plan file is the running source of truth for the Home component and gets revised incrementally as gaps are found and closed.
+
+ROADMAP CONTEXT
+
+Arlo Chat's full roadmap (see plan/Login Improved.txt for detail): 1. Login (done), 2. Search bar over conversations, 3. Manage Friends, 4. One-to-one chat, 5. Group chat, 6. Translate conversation, 7. Generative AI assist layered onto 4/5.
+
+The Home component, as scoped by the user, bundles items 2, 4, 5, and part of 7 into one screen: search bar, conversation list, live chat pane, attachments, and an AI-assist send option.
+
+HOME COMPONENT: DRAFT V1 AS ORIGINALLY PROPOSED
+
+<header>
+  <company-logo content="Arlo Chat" float="left"></company-logo>
+  <search-bar float="middle">
+    <!-- we will show top 10 messages which having the search content -->
+  </search-bar>
+  <button content="Manage Friends">
+    <!-- on click of it, it navigates to Manage Friends Component -->
+  </button>
+  <button content="Settings icon">
+    <!-- on click of it, popup will be opened with theme option -->
+  </button>
+</header>
+<body>
+  <!-- left side occupes 30% -->
+  <conversations>
+    <!-- each conversation tile contains either receiver name or group name and latest message-->
+  </conversations>
+
+  <!-- right side occupes 70% -->
+  <conversation-content #textBox>
+    <conversation-content-header>
+      <Receiver-Name>
+        <!-- receiver name or group name -->
+      </Receiver-Name>
+      <span>
+        <!-- if receiver, then show receiver's online status -->
+         <!-- if group, then how many numbers are active -->
+      </span>
+      <more-options></more-options>
+    </conversation-content-header>
+    <conversation-content-body>
+      <messages>
+        <!-- sender messages has to be right side -->
+         <!-- receiver messages has to be left side -->
+      </messages>
+
+    </conversation-content-body>
+    <conversation-content-footer>
+      <text-box>
+        <!-- if attachments added, then show the attachments label with how many added -->
+        <!-- on click of attachment label, then show popup -->
+        <!-- in that popup, show all the attachments in tiles -->
+        <!-- in each tile, we will show the attachment with cross symbol -->
+        <!-- on click of cross symbol, it removes the attachment from the list. -->
+      </text-box>
+      <add-attachment></add-attachment>
+      <enable-ai-checkbox>
+        <!-- on click of it, when we try to send a message, it will mark that message as AI Assist Enabled
+         Due to this, we will send the message to GROQ AI model and get the response and render it as sender's message -->
+      </enable-ai-checkbox>
+      <send-button></send-button>
+    </conversation-content-footer>
+  </conversation-content>
+</body>
+
+Generic components:
+<popup></popup>
+<attachments>this component contains the attachments in the tiles</attachments>
+<more-options> it has 3 dots button - we can pass options to it
+
+NOTE:
+* Ai assited message query will be shown only to the sender and not receiver's or group members
+* sender can only see the ai assisted message query and reponse, only after long press on the ai assist message, there will show the option view AI Assist message query, it will be shown in the popup
+* header bg-color is dark rich color and body bg-color is lighter shade of the header bg-color
+
+Everything below records how that draft evolves, item by item, as gaps are found and resolved in discussion.
+
+(discussion starts below — no items resolved yet)

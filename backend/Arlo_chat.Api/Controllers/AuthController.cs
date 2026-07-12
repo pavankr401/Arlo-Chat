@@ -17,13 +17,22 @@ public class AuthController : ControllerBase
     private readonly ITokenService _tokenService;
     private readonly IMapper _mapper;
     private readonly JwtOptions _jwtOptions;
+    private readonly SameSiteMode _cookieSameSite;
 
-    public AuthController(IUserService userService, ITokenService tokenService, IMapper mapper, IOptions<JwtOptions> jwtOptions)
+    public AuthController(
+        IUserService userService,
+        ITokenService tokenService,
+        IMapper mapper,
+        IOptions<JwtOptions> jwtOptions,
+        IOptions<SessionCookieOptions> cookieOptions)
     {
         _userService = userService;
         _tokenService = tokenService;
         _mapper = mapper;
         _jwtOptions = jwtOptions.Value;
+        _cookieSameSite = Enum.TryParse<SameSiteMode>(cookieOptions.Value.SameSite, ignoreCase: true, out var mode)
+            ? mode
+            : SameSiteMode.Lax;
     }
 
     [HttpPost("register")]
@@ -117,7 +126,7 @@ public class AuthController : ControllerBase
         {
             HttpOnly = true,
             Secure = true,
-            SameSite = SameSiteMode.Lax,
+            SameSite = _cookieSameSite,
             Path = "/",
             Expires = accessExpires
         });
@@ -126,7 +135,7 @@ public class AuthController : ControllerBase
         {
             HttpOnly = false,
             Secure = true,
-            SameSite = SameSiteMode.Lax,
+            SameSite = _cookieSameSite,
             Path = "/",
             Expires = refreshExpires
         });
@@ -135,7 +144,7 @@ public class AuthController : ControllerBase
         {
             HttpOnly = true,
             Secure = true,
-            SameSite = SameSiteMode.Lax,
+            SameSite = _cookieSameSite,
             Path = CookieNames.RefreshPath,
             Expires = refreshExpires
         });

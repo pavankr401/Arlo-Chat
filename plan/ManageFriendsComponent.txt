@@ -1,0 +1,31 @@
+<Manage-Friends>
+  <Manage-Friends-Header>
+<button content="back">
+  <Add-Friends>
+    <Add-Friends-Header>
+      <search-bar>
+        <!-- on search of friend, requested friends will be shown atlast but instead of add will show already requested -->
+      </search-bar>
+    </Add-Friends-Header>
+    <Add-Friends-Body>
+      <!-- list 10 random members who are not their in the friend list and requests list -->
+    </Add-Friends-Body>
+    
+  </Add-Friends>
+  <Friend-Requests>
+      <!-- we will show the request with tick and wrong options -->
+       <!-- on tick option, one will be in the friends list -->
+        <!-- on wrong option, again will be visible in random members list -->
+  </Friend-Requests>
+  <Friends>
+    <!-- we will show message and delete option beside the friend option -->
+     <!-- on click of delete, one will be shown in random friends list -->
+      <!-- on click of message, popup will be shown, conversation content option will be rendered -->
+  </Friends>
+  <button content="logout">
+  </Manage-Friends-Header>
+
+<Manage-Friends-Body>
+<!-- display the related functionality here>
+</Manage-Friends-Body>
+</Manage-Friends>
