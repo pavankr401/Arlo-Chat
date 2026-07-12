@@ -1,11 +1,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-COPY Arlo_chat.Api.csproj .
-RUN dotnet restore Arlo_chat.Api.csproj
+COPY backend/Arlo_chat.Api/Arlo_chat.Api.csproj backend/Arlo_chat.Api/
+RUN dotnet restore backend/Arlo_chat.Api/Arlo_chat.Api.csproj
 
-COPY . .
-RUN dotnet publish Arlo_chat.Api.csproj -c Release -o /app/publish --no-restore
+COPY backend/Arlo_chat.Api/ backend/Arlo_chat.Api/
+RUN dotnet publish backend/Arlo_chat.Api/Arlo_chat.Api.csproj -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
