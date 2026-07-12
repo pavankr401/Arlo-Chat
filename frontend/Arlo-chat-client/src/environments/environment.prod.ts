@@ -1,4 +1,4 @@
 export const environment = {
   production: true,
-  apiBaseUrl: 'https://REPLACE_WITH_BACKEND_URL.onrender.com'
+  apiBaseUrl: 'https://arlo-chat.onrender.com'
 };
