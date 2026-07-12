@@ -1,5 +1,113 @@
-<div class="auth-card">
-  <h1>Welcome{{ currentUser() ? ', ' + currentUser()?.username : '' }}</h1>
-  <p>You're logged in as {{ currentUser()?.email }}.</p>
-  <button type="button" (click)="logout()">Log out</button>
+<div class="home">
+  <header class="home-header">
+    <div class="logo">Arlo Chat</div>
+
+    <div class="search-bar">
+      <input
+        type="text"
+        placeholder="Search conversations"
+        [ngModel]="searchTerm()"
+        (ngModelChange)="searchTerm.set($event)"
+      />
+    </div>
+
+    <div class="header-actions">
+      <button type="button" class="text-btn" (click)="openAddGroup()">Add Group</button>
+      <button type="button" class="text-btn" (click)="goToManageFriends()">Manage Friends</button>
+
+      <div class="settings" #settingsRef>
+        <button type="button" class="icon-btn" (click)="toggleThemeMenu()" aria-label="Settings">&#9881;</button>
+        @if (themeMenuOpen()) {
+          <div class="theme-menu">
+            <button type="button" (click)="setTheme('light')">Light</button>
+            <button type="button" (click)="setTheme('dark')">Dark</button>
+          </div>
+        }
+      </div>
+
+      <span class="username">{{ currentUser()?.username }}</span>
+      <button type="button" class="text-btn" (click)="logout()">Log out</button>
+    </div>
+  </header>
+
+  <div class="home-body">
+    <aside class="conversations">
+      @for (conversation of filteredConversations(); track conversation.id) {
+        <button
+          type="button"
+          class="conversation-tile"
+          [class.active]="isActiveConversation(conversation)"
+          (click)="selectConversation(conversation)"
+        >
+          <span class="name">{{ displayNameFor(conversation) }}</span>
+          <span class="preview">{{ latestMessagePreview(conversation) }}</span>
+        </button>
+      } @empty {
+        <p class="hint">No conversations yet. Add a friend and say hello.</p>
+      }
+
+      @if (conversationsHasMore()) {
+        <button
+          type="button"
+          class="load-more-btn"
+          [disabled]="loadingMoreConversations()"
+          (click)="loadMoreConversations()"
+        >
+          {{ loadingMoreConversations() ? 'Loading...' : 'Load more' }}
+        </button>
+      }
+    </aside>
+
+    <section class="conversation-content">
+      @if (activeConversation(); as conversation) {
+        <app-conversation-pane
+          [target]="{ kind: 'conversation', conversation }"
+          [title]="displayNameFor(conversation)"
+        />
+      } @else {
+        <div class="empty-state">
+          <p>Select a conversation to start chatting.</p>
+        </div>
+      }
+    </section>
+  </div>
+
+  @if (addGroupOpen()) {
+    <app-popup (close)="closeAddGroup()">
+      <div class="group-form">
+        <h2>New group</h2>
+
+        <input
+          type="text"
+          placeholder="Group name"
+          [ngModel]="groupName()"
+          (ngModelChange)="groupName.set($event)"
+          name="groupName"
+        />
+
+        <div class="friend-select-list">
+          @for (friend of friends(); track friend.id) {
+            <label class="friend-select-row">
+              <input
+                type="checkbox"
+                [checked]="isFriendSelected(friend.id)"
+                (change)="toggleFriendSelection(friend.id)"
+              />
+              <span>{{ friend.username }}</span>
+            </label>
+          } @empty {
+            <p class="hint">Add some friends first before creating a group.</p>
+          }
+        </div>
+
+        @if (createGroupError()) {
+          <p class="error" role="alert">{{ createGroupError() }}</p>
+        }
+
+        <button type="button" (click)="createGroup()" [disabled]="creatingGroup()">
+          {{ creatingGroup() ? 'Creating...' : 'Create' }}
+        </button>
+      </div>
+    </app-popup>
+  }
 </div>

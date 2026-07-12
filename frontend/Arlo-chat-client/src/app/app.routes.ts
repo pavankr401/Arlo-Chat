@@ -19,5 +19,10 @@ export const routes: Routes = [
     loadComponent: () => import('./components/home/home.component').then(m => m.HomeComponent),
     canActivate: [authGuard]
   },
+  {
+    path: 'manage-friends',
+    loadComponent: () => import('./components/manage-friends/manage-friends.component').then(m => m.ManageFriendsComponent),
+    canActivate: [authGuard]
+  },
   { path: '**', redirectTo: 'login' }
 ];

@@ -1,0 +1,11 @@
+<div class="popup-backdrop" (click)="close.emit()">
+  <div
+    class="popup-box"
+    [class.fixed-height]="fixedHeight"
+    [style.--popup-width]="width"
+    (click)="$event.stopPropagation()"
+  >
+    <button type="button" class="popup-close" (click)="close.emit()" aria-label="Close">&#10005;</button>
+    <ng-content></ng-content>
+  </div>
+</div>

@@ -1,0 +1,161 @@
+<div class="manage-friends">
+  <header class="mf-header">
+    <button type="button" class="text-btn" (click)="goBack()">&larr; Back</button>
+    <h1>Manage Friends</h1>
+    <div class="header-right">
+      <span class="username">{{ currentUser()?.username }}</span>
+      <button type="button" class="text-btn" (click)="logout()">Log out</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button type="button" [class.active]="activeTab() === 'add'" (click)="setTab('add')">Add Friends</button>
+    <button type="button" [class.active]="activeTab() === 'requests'" (click)="setTab('requests')">
+      Friend Requests
+      @if (incomingRequests().length) {
+        <span class="badge">{{ incomingRequests().length }}</span>
+      }
+    </button>
+    <button type="button" [class.active]="activeTab() === 'friends'" (click)="setTab('friends')">Friends</button>
+  </nav>
+
+  @if (actionError()) {
+    <p class="error" role="alert">{{ actionError() }}</p>
+  }
+  @if (actionSuccess()) {
+    <p class="success" role="status">{{ actionSuccess() }}</p>
+  }
+
+  <div class="tab-body">
+    @switch (activeTab()) {
+      @case ('add') {
+        <div class="add-friends">
+          <form class="search-bar" (ngSubmit)="search()">
+            <input
+              type="text"
+              placeholder="Search by username or email"
+              [ngModel]="searchQuery()"
+              (ngModelChange)="searchQuery.set($event)"
+              name="searchQuery"
+            />
+            <button type="submit" [disabled]="searchLoading()">Search</button>
+          </form>
+
+          @if (searchLoading() && searchResults().length === 0) {
+            <p class="hint">Searching...</p>
+          }
+          @if (searchMessage()) {
+            <p class="hint">{{ searchMessage() }}</p>
+          }
+
+          @for (user of searchResults(); track user.id) {
+            <div class="user-row">
+              <div class="user-info">
+                <span class="username">{{ user.username }}</span>
+                <span class="email">{{ user.email }}</span>
+              </div>
+              @switch (user.friendshipStatus) {
+                @case ('None') {
+                  <button type="button" class="add-btn" (click)="addFriend(user)">Add</button>
+                }
+                @case ('RequestSent') {
+                  <span class="status">Request sent</span>
+                }
+                @case ('RequestReceived') {
+                  <span class="status">Sent you a request</span>
+                }
+                @case ('Accepted') {
+                  <span class="status">Already friends</span>
+                  <div class="row-actions">
+                    <button type="button" class="text-btn" (click)="messageFriend(user)">Message</button>
+                    <button type="button" class="text-btn danger" (click)="removeFriend(user)">Remove</button>
+                  </div>
+                }
+                @default {
+                  <button type="button" class="add-btn" (click)="addFriend(user)">Add</button>
+                }
+              }
+            </div>
+          }
+
+          @if (searchHasMore()) {
+            <button type="button" class="load-more-btn" [disabled]="searchLoading()" (click)="loadMoreSearchResults()">
+              {{ searchLoading() ? 'Loading...' : 'Load more' }}
+            </button>
+          }
+        </div>
+      }
+
+      @case ('requests') {
+        <div class="friend-requests">
+          <h2 class="section-heading">Received</h2>
+          @for (request of incomingRequests(); track request.friendshipId) {
+            <div class="user-row">
+              <div class="user-info">
+                <span class="username">{{ request.username }}</span>
+                <span class="email">{{ request.email }}</span>
+              </div>
+              <div class="row-actions">
+                <button type="button" class="icon-btn accept" (click)="respondToRequest(request, true)" aria-label="Accept">&#10003;</button>
+                <button type="button" class="icon-btn reject" (click)="respondToRequest(request, false)" aria-label="Reject">&#10007;</button>
+              </div>
+            </div>
+          } @empty {
+            <p class="hint">No pending requests.</p>
+          }
+
+          <h2 class="section-heading">Sent</h2>
+          @for (request of outgoingRequests(); track request.friendshipId) {
+            <div class="user-row">
+              <div class="user-info">
+                <span class="username">{{ request.username }}</span>
+                <span class="email">{{ request.email }}</span>
+              </div>
+              <div class="row-actions">
+                <button type="button" class="text-btn danger" (click)="cancelRequest(request)">Cancel</button>
+              </div>
+            </div>
+          } @empty {
+            <p class="hint">No requests waiting on a response.</p>
+          }
+        </div>
+      }
+
+      @case ('friends') {
+        <div class="friends-list">
+          @for (friend of friends(); track friend.id) {
+            <div class="user-row">
+              <div class="user-info">
+                <span class="username">{{ friend.username }}</span>
+                <span class="email">{{ friend.email }}</span>
+              </div>
+              <div class="row-actions">
+                <button type="button" class="text-btn" (click)="messageFriend(friend)">Message</button>
+                <button type="button" class="text-btn danger" (click)="removeFriend(friend)">Remove</button>
+              </div>
+            </div>
+          } @empty {
+            <p class="hint">No friends yet - search above to add some.</p>
+          }
+
+          @if (friendsHasMore()) {
+            <button
+              type="button"
+              class="load-more-btn"
+              [disabled]="loadingMoreFriends()"
+              (click)="loadMoreFriends()"
+            >
+              {{ loadingMoreFriends() ? 'Loading...' : 'Load more' }}
+            </button>
+          }
+        </div>
+      }
+    }
+  </div>
+
+  @if (messagePopupTarget(); as target) {
+    <app-popup [fixedHeight]="true" (close)="closeMessagePopup()">
+      <app-conversation-pane [target]="target" [title]="messagePopupTitle" />
+    </app-popup>
+  }
+</div>

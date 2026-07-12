@@ -1,0 +1,46 @@
+<header class="content-header">
+  <span class="receiver-name">{{ title }}</span>
+</header>
+
+<div class="content-body" #contentBody (scroll)="onMessagesScroll($event)">
+  @if (loadingMessages()) {
+    <p class="hint">Loading messages...</p>
+  }
+  @if (loadingOlderMessages()) {
+    <p class="hint">Loading older messages...</p>
+  }
+  @for (message of messages(); track message.id) {
+    <div class="message" [class.mine]="isMine(message)">
+      @if (isGroup()) {
+        <span class="sender-name" [style.color]="senderColor(message.ownerId)">{{ senderName(message) }}</span>
+      }
+      <p class="bubble">{{ message.content }}</p>
+      <span class="timestamp">{{ message.createdDate | date: 'short' }}</span>
+    </div>
+  } @empty {
+    @if (!loadingMessages()) {
+      <p class="hint">No messages yet - say hello!</p>
+    }
+  }
+  <div #messagesEnd></div>
+</div>
+
+<footer class="content-footer">
+  @if (sendError()) {
+    <p class="error" role="alert">{{ sendError() }}</p>
+  }
+  <form class="text-box" (ngSubmit)="sendMessage()">
+    <input
+      type="text"
+      placeholder="Type a message"
+      [ngModel]="messageDraft()"
+      (ngModelChange)="messageDraft.set($event)"
+      name="messageDraft"
+    />
+    <button type="submit" class="send-btn" aria-label="Send">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+        <path d="M2 21l21-9L2 3v7l15 2-15 2z" />
+      </svg>
+    </button>
+  </form>
+</footer>
