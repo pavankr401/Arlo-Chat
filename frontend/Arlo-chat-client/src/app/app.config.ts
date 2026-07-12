@@ -1,18 +1,18 @@
 import { APP_INITIALIZER, ApplicationConfig } from '@angular/core';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient, withInterceptors, withXsrfConfiguration } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
 import { routes } from './app.routes';
 import { authErrorInterceptor } from './interceptors/auth-error.interceptor';
+import { csrfInterceptor } from './interceptors/csrf.interceptor';
 import { AuthService } from './services/auth.service';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(routes),
     provideHttpClient(
-      withXsrfConfiguration({ cookieName: 'XSRF-TOKEN', headerName: 'X-CSRF-Token' }),
-      withInterceptors([authErrorInterceptor])
+      withInterceptors([csrfInterceptor, authErrorInterceptor])
     ),
     {
       provide: APP_INITIALIZER,

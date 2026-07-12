@@ -50,7 +50,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    public async Task<ActionResult<UserDto>> Login(LoginRequestModel request)
+    public async Task<ActionResult<AuthResponseDto>> Login(LoginRequestModel request)
     {
         var user = await _userService.ValidateCredentialsAsync(request.Username, request.Password);
         if (user is null)
@@ -60,25 +60,30 @@ public class AuthController : ControllerBase
         var accessToken = _tokenService.GenerateAccessToken(user, familyId);
         var refreshToken = await _tokenService.IssueRefreshTokenAsync(user.Id, familyId);
 
-        IssueSessionCookies(accessToken, refreshToken.RawToken, refreshToken.ExpiresAt);
+        var csrfToken = IssueSessionCookies(accessToken, refreshToken.RawToken, refreshToken.ExpiresAt);
 
-        return Ok(_mapper.Map<UserDto>(user));
+        return Ok(new AuthResponseDto(_mapper.Map<UserDto>(user), csrfToken));
     }
 
     [Authorize]
     [HttpGet("me")]
-    public async Task<ActionResult<UserDto>> Me()
+    public async Task<ActionResult<AuthResponseDto>> Me()
     {
         var userId = GetUserIdFromClaims();
         var user = await _userService.GetByIdAsync(userId);
         if (user is null)
             return Unauthorized();
 
-        return Ok(_mapper.Map<UserDto>(user));
+        // The frontend's JS can't read this cookie cross-origin (document.cookie is
+        // scoped to the frontend's own origin), so the value it already holds server-side
+        // is handed back in the body instead - re-hydrates the in-memory CSRF token on reload.
+        var csrfToken = Request.Cookies[CookieNames.Csrf] ?? string.Empty;
+
+        return Ok(new AuthResponseDto(_mapper.Map<UserDto>(user), csrfToken));
     }
 
     [HttpPost("refresh")]
-    public async Task<ActionResult<UserDto>> Refresh()
+    public async Task<ActionResult<AuthResponseDto>> Refresh()
     {
         var rawToken = Request.Cookies[CookieNames.RefreshToken];
         if (string.IsNullOrEmpty(rawToken))
@@ -92,9 +97,9 @@ public class AuthController : ControllerBase
         }
 
         var accessToken = _tokenService.GenerateAccessToken(result.User, result.FamilyId);
-        IssueSessionCookies(accessToken, result.NewRawToken!, result.NewExpiresAt);
+        var csrfToken = IssueSessionCookies(accessToken, result.NewRawToken!, result.NewExpiresAt);
 
-        return Ok(_mapper.Map<UserDto>(result.User));
+        return Ok(new AuthResponseDto(_mapper.Map<UserDto>(result.User), csrfToken));
     }
 
     [Authorize]
@@ -116,7 +121,7 @@ public class AuthController : ControllerBase
         return int.Parse(subClaim);
     }
 
-    private void IssueSessionCookies(string accessToken, string refreshToken, DateTime refreshExpiresAt)
+    private string IssueSessionCookies(string accessToken, string refreshToken, DateTime refreshExpiresAt)
     {
         var accessExpires = DateTimeOffset.UtcNow.AddMinutes(_jwtOptions.AccessTokenMinutes);
         var refreshExpires = new DateTimeOffset(DateTime.SpecifyKind(refreshExpiresAt, DateTimeKind.Utc));
@@ -148,6 +153,8 @@ public class AuthController : ControllerBase
             Path = CookieNames.RefreshPath,
             Expires = refreshExpires
         });
+
+        return csrfToken;
     }
 
     private void ClearSessionCookies()
